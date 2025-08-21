@@ -5,11 +5,14 @@ Results:
 ==================== FINAL RESULTS SUMMARY ====================
 
 Model: google/gemma-3-4b-it
-  - Recall: 100.00% (12/12)
+  - Average Log Loss: 0.0000
+  - Accuracy: 100.00% (12/12)
 ------------------------------
 Model: google/gemma-3-270m-it
-  - Recall: 100.00% (12/12)
+  - Average Log Loss: 0.0534
+  - Accuracy: 100.00% (12/12)
 ------------------------------
 Model: google/gemma-3-1b-it
-  - Recall: 75.00% (9/12)
+  - Average Log Loss: 0.3229
+  - Accuracy: 83.33% (10/12)
 ------------------------------
