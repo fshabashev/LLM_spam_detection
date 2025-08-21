@@ -1,16 +1,15 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import gc # Garbage Collector interface
+import numpy as np
 
 # --- Configuration ---
-# 1. Define the list of model IDs to evaluate
 model_ids = [
     "google/gemma-3-4b-it", # A more capable model for comparison
     "google/gemma-3-1b-it",
     "google/gemma-3-270m-it",
 ]
 
-# 2. Spam examples for evaluation
 spam_examples = [
     # Category 1: Financial & "Get Rich Quick" Schemes
     "Your mobile number has been selected as a winner in our monthly Grand Prize draw! You have won £1,500,000. To claim your prize, please visit this link and enter your details: [bit.ly/claim-your-winnings-now]",
@@ -36,8 +35,7 @@ results_summary = {}
 # --- Main Evaluation Loop ---
 for model_id in model_ids:
     print(f"\n{'='*20} EVALUATING MODEL: {model_id} {'='*20}")
-    
-    # --- Load Model and Tokenizer ---
+
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
@@ -45,58 +43,67 @@ for model_id in model_ids:
         torch_dtype=torch.bfloat16
     )
 
+    yes_token_id = tokenizer.encode("Yes", add_special_tokens=False)[-1]
+    no_token_id = tokenizer.encode("No", add_special_tokens=False)[-1]
+
     # --- Initialize Metrics ---
-    true_positives = 0
-    false_negatives = 0
+    log_losses = []
+    correct_predictions = 0 # <-- NEW: Counter for accuracy
 
     # --- Evaluate on each spam example ---
-    for i, spam_text in enumerate(spam_examples):
-        print(f"  Testing example {i+1}/{len(spam_examples)}...", end='\r')
-        
-        # Prepare input prompt
-        messages = [
-            {"role": "user", "content": f"Is this a spam? Answer just yes or no. Text to evaluate: '{spam_text}'"},
-        ]
-        
-        # THIS IS THE CORRECTED LINE
-        inputs = tokenizer.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True, # <-- FIX: This ensures the output is a dictionary
-            return_tensors="pt",
-        ).to(device)
+    with torch.no_grad():
+        for i, spam_text in enumerate(spam_examples):
+            print(f"  Testing example {i+1}/{len(spam_examples)}...", end='\r')
 
-        # Generate output
-        outputs = model.generate(**inputs, max_new_tokens=5)
-        
-        # Decode and clean the output
-        decoded_output = tokenizer.decode(
-            outputs[0][inputs["input_ids"].shape[-1]:],
-            skip_special_tokens=True
-        ).strip().lower()
+            messages = [
+                {"role": "user", "content": f"Is this a spam? Answer just yes or no. Text to evaluate: '{spam_text}'"},
+            ]
 
-        # Check the answer
-        if decoded_output.startswith('yes'):
-            true_positives += 1
-        else:
-            false_negatives += 1
+            inputs = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=True,
+                return_dict=True, return_tensors="pt"
+            ).to(device)
+            
+            # We only need the logits, so max_new_tokens=1 is efficient
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=1,
+                output_logits=True,
+                return_dict_in_generate=True
+            )
 
-    # --- Calculate and Store Results ---
-    total_evaluated = true_positives + false_negatives
-    recall = (true_positives / total_evaluated) * 100 if total_evaluated > 0 else 0
+            logits = outputs.logits[0].squeeze()
+            probabilities = torch.softmax(logits, dim=-1)
+
+            prob_yes = probabilities[yes_token_id]
+            prob_no = probabilities[no_token_id]
+            
+            # --- NEW: Check for Accuracy ---
+            # The model's choice is correct if P(Yes) > P(No)
+            if prob_yes > prob_no:
+                correct_predictions += 1
+
+            # --- Calculate Log Loss (as before) ---
+            total_prob = prob_yes + prob_no
+            normalized_prob_yes = prob_yes / (total_prob + 1e-9)
+            loss = -torch.log(normalized_prob_yes + 1e-9)
+            log_losses.append(loss.item())
+
+    # --- Calculate and Store Final Metrics ---
+    avg_log_loss = np.mean(log_losses)
+    accuracy = (correct_predictions / len(spam_examples)) * 100
     
     results_summary[model_id] = {
-        "TP": true_positives,
-        "FN": false_negatives,
-        "Recall": recall
+        "Avg Log Loss": avg_log_loss,
+        "Accuracy": accuracy,
+        "Correct": correct_predictions,
+        "Total": len(spam_examples)
     }
-    
+
     print(f"\nEvaluation complete for {model_id}.")
-    print(f"  - True Positives (Correctly flagged): {true_positives}")
-    print(f"  - False Negatives (Missed spam): {false_negatives}")
-    print(f"  - Recall Score: {recall:.2f}%")
-    
+    print(f"  - Average Log Loss: {avg_log_loss:.4f} (Lower is better)")
+    print(f"  - Accuracy: {accuracy:.2f}% ({correct_predictions}/{len(spam_examples)})")
+
     # --- IMPORTANT: Clear Memory ---
     del model
     del tokenizer
@@ -106,10 +113,11 @@ for model_id in model_ids:
 # --- Final Summary ---
 print(f"\n\n{'='*20} FINAL RESULTS SUMMARY {'='*20}")
 
-# Sort models by recall score in descending order
-sorted_models = sorted(results_summary.items(), key=lambda item: item[1]['Recall'], reverse=True)
+# Sort models by log loss score (ascending) as the primary metric
+sorted_models = sorted(results_summary.items(), key=lambda item: item[1]['Avg Log Loss'])
 
 for model_id, metrics in sorted_models:
     print(f"Model: {model_id}")
-    print(f"  - Recall: {metrics['Recall']:.2f}% ({metrics['TP']}/{metrics['TP'] + metrics['FN']})")
+    print(f"  - Average Log Loss: {metrics['Avg Log Loss']:.4f}")
+    print(f"  - Accuracy: {metrics['Accuracy']:.2f}% ({metrics['Correct']}/{metrics['Total']})")
     print("-" * 30)
