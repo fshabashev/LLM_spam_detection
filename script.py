@@ -4,11 +4,11 @@ import gc # Garbage Collector interface
 import numpy as np
 
 # --- Configuration ---
-model_ids = [
-    "google/gemma-3-4b-it", # A more capable model for comparison
-    "google/gemma-3-1b-it",
-    "google/gemma-3-270m-it",
-]
+model_ids = ["google/gemma-3-4b-it", # A more capable model for comparison
+"google/gemma-3-1b-it",
+"google/gemma-3-270m-it",
+"google/gemma-2-2b-it",
+"google/gemma-3n-e4b-it",] 
 
 spam_examples = [
     # Category 1: Financial & "Get Rich Quick" Schemes
@@ -29,6 +29,32 @@ spam_examples = [
     "Regain your confidence and vitality. Our all-natural supplement is clinically proven to increase stamina and performance. Discreet shipping and a 100% money-back guarantee. Order now for a special 50% discount."
 ]
 
+ham_examples = [
+    # Personal & Casual Communication
+    "Hey, are you still free for coffee on Saturday morning? Let me know what time works for you!",
+    "Did you see the match last night? What a crazy ending! We need to talk about that final goal.",
+    "Just wanted to check in and see how you're doing. It's been a while! Hope all is well.",
+    "Don't forget to pick up milk on your way home, we're completely out. Thanks!",
+
+    # Work & Professional Correspondence
+    "Hi Team, please find the agenda for tomorrow's 10 AM project sync meeting attached. Please review it beforehand.",
+    "Just confirming I've received the client files. I'll review them this afternoon and send over my feedback. Best, Sarah.",
+    "Reminder: Q3 performance reviews are due by the end of the week. Please ensure your self-assessment is submitted in the portal.",
+
+    # Transactional & Order Updates
+    "Your order #A-12345 from Amazon has shipped! You can track your package with the number 1Z987XYZ.",
+    "Thank you for your payment. Your invoice for August 2025 is now available to view in your account dashboard.",
+    "Hi Alex, this is a reminder of your dental appointment with Dr. Smith tomorrow, August 22nd, at 2:30 PM.",
+
+    # Legitimate Alerts & Subscriptions
+    "Your password for your Google Account was recently changed. If this wasn't you, please secure your account immediately.",
+    "The Guardian: Your weekly news summary is here. Read about the latest developments in politics and technology.",
+    "Your flight BA2491 from London to Paris is now boarding at Gate A17."
+]
+
+# --- Create a combined and labeled dataset ---
+all_examples = [(text, "spam") for text in spam_examples] + [(text, "ham") for text in ham_examples]
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 results_summary = {}
 
@@ -46,78 +72,86 @@ for model_id in model_ids:
     yes_token_id = tokenizer.encode("Yes", add_special_tokens=False)[-1]
     no_token_id = tokenizer.encode("No", add_special_tokens=False)[-1]
 
-    # --- Initialize Metrics ---
+    # --- Initialize Comprehensive Metrics ---
     log_losses = []
-    correct_predictions = 0 # <-- NEW: Counter for accuracy
+    true_positives, true_negatives, false_positives, false_negatives = 0, 0, 0, 0
 
-    # --- Evaluate on each spam example ---
+    # --- Evaluate on all examples ---
     with torch.no_grad():
-        for i, spam_text in enumerate(spam_examples):
-            print(f"  Testing example {i+1}/{len(spam_examples)}...", end='\r')
+        for i, (text, label) in enumerate(all_examples):
+            print(f"  Testing example {i+1}/{len(all_examples)}...", end='\r')
 
-            messages = [
-                {"role": "user", "content": f"Is this a spam? Answer just yes or no. Text to evaluate: '{spam_text}'"},
-            ]
-
+            messages = [{"role": "user", "content": f"Is this a spam? Answer just Yes or No. Text to evaluate: '{text}'"}]
             inputs = tokenizer.apply_chat_template(
                 messages, add_generation_prompt=True, tokenize=True,
                 return_dict=True, return_tensors="pt"
             ).to(device)
             
-            # We only need the logits, so max_new_tokens=1 is efficient
             outputs = model.generate(
-                **inputs,
-                max_new_tokens=1,
-                output_logits=True,
-                return_dict_in_generate=True
+                **inputs, max_new_tokens=1, output_logits=True, return_dict_in_generate=True
             )
 
             logits = outputs.logits[0].squeeze()
             probabilities = torch.softmax(logits, dim=-1)
-
             prob_yes = probabilities[yes_token_id]
             prob_no = probabilities[no_token_id]
-            
-            # --- NEW: Check for Accuracy ---
-            # The model's choice is correct if P(Yes) > P(No)
-            if prob_yes > prob_no:
-                correct_predictions += 1
 
-            # --- Calculate Log Loss (as before) ---
+            # --- Update Classification Counters ---
+            prediction_is_spam = prob_yes > prob_no
+            
+            if prediction_is_spam and label == "spam":
+                true_positives += 1
+            elif not prediction_is_spam and label == "ham":
+                true_negatives += 1
+            elif prediction_is_spam and label == "ham":
+                false_positives += 1
+            elif not prediction_is_spam and label == "spam":
+                false_negatives += 1
+
+            # --- Calculate Log Loss ---
             total_prob = prob_yes + prob_no
-            normalized_prob_yes = prob_yes / (total_prob + 1e-9)
-            loss = -torch.log(normalized_prob_yes + 1e-9)
+            if label == "spam":
+                normalized_prob = prob_yes / (total_prob + 1e-9)
+            else: # label is "ham"
+                normalized_prob = prob_no / (total_prob + 1e-9)
+            
+            loss = -torch.log(normalized_prob + 1e-9)
             log_losses.append(loss.item())
 
-    # --- Calculate and Store Final Metrics ---
+    # --- Calculate Final Metrics ---
+    total_predictions = len(all_examples)
+    accuracy = (true_positives + true_negatives) / total_predictions
+    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+    f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     avg_log_loss = np.mean(log_losses)
-    accuracy = (correct_predictions / len(spam_examples)) * 100
     
     results_summary[model_id] = {
-        "Avg Log Loss": avg_log_loss,
-        "Accuracy": accuracy,
-        "Correct": correct_predictions,
-        "Total": len(spam_examples)
+        "Accuracy": accuracy, "Precision": precision, "Recall": recall, 
+        "F1-Score": f1_score, "Avg Log Loss": avg_log_loss
     }
 
     print(f"\nEvaluation complete for {model_id}.")
-    print(f"  - Average Log Loss: {avg_log_loss:.4f} (Lower is better)")
-    print(f"  - Accuracy: {accuracy:.2f}% ({correct_predictions}/{len(spam_examples)})")
+    print(f"  - TP: {true_positives}, TN: {true_negatives}, FP: {false_positives}, FN: {false_negatives}")
+    print(f"  - Accuracy: {accuracy:.2%}")
+    print(f"  - Precision: {precision:.2%}, Recall: {recall:.2%}, F1-Score: {f1_score:.2%}")
+    print(f"  - Avg Log Loss: {avg_log_loss:.4f} (Lower is better)")
 
-    # --- IMPORTANT: Clear Memory ---
-    del model
-    del tokenizer
+    del model, tokenizer
     gc.collect()
     torch.cuda.empty_cache()
 
 # --- Final Summary ---
 print(f"\n\n{'='*20} FINAL RESULTS SUMMARY {'='*20}")
 
-# Sort models by log loss score (ascending) as the primary metric
-sorted_models = sorted(results_summary.items(), key=lambda item: item[1]['Avg Log Loss'])
+# Sort models by F1-Score as the primary metric
+sorted_models = sorted(results_summary.items(), key=lambda item: item[1]['F1-Score'], reverse=True)
 
 for model_id, metrics in sorted_models:
     print(f"Model: {model_id}")
-    print(f"  - Average Log Loss: {metrics['Avg Log Loss']:.4f}")
-    print(f"  - Accuracy: {metrics['Accuracy']:.2f}% ({metrics['Correct']}/{metrics['Total']})")
+    print(f"  - F1-Score: {metrics['F1-Score']:.2%}")
+    print(f"  - Accuracy: {metrics['Accuracy']:.2%}")
+    print(f"  - Precision: {metrics['Precision']:.2%}")
+    print(f"  - Recall: {metrics['Recall']:.2%}")
+    print(f"  - Avg Log Loss: {metrics['Avg Log Loss']:.4f}")
     print("-" * 30)
