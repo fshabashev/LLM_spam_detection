@@ -4,9 +4,8 @@ This project benchmarks various instruction-tuned Large Language Models (LLMs) o
 
 Evaluation Metrics
 
-    Accuracy: This is the most straightforward metric. It measures the percentage of spam messages the model correctly classifies as spam. While easy to understand, it's a binary measure that treats a confident correct answer the same as a hesitant one.
-
-    Average Log Loss (Cross-Entropy): This is a more powerful metric that evaluates the model's confidence. It heavily penalizes models that are "confidently wrong" and rewards models that are confident in the correct answer. A lower log loss score is better, with a score near 0.0 indicating that the model was consistently and highly confident in its correct predictions.
+* Accuracy: This is the most straightforward metric. It measures the percentage of spam messages the model correctly classifies as spam. While easy to understand, it's a binary measure that treats a confident correct answer the same as a hesitant one.
+* Average Log Loss (Cross-Entropy): This is a more powerful metric that evaluates the model's confidence. It heavily penalizes models that are "confidently wrong" and rewards models that are confident in the correct answer. A lower log loss score is better, with a score near 0.0 indicating that the model was consistently and highly confident in its correct predictions.
 
 Together, these metrics provide a comprehensive view: Accuracy tells us the rate of correct classifications, while Log Loss reveals the model's underlying certainty and reliability.
 Results:
