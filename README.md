@@ -8,6 +8,7 @@ Evaluation Metrics
 * Average Log Loss (Cross-Entropy): This is a more powerful metric that evaluates the model's confidence. It heavily penalizes models that are "confidently wrong" and rewards models that are confident in the correct answer. A lower log loss score is better, with a score near 0.0 indicating that the model was consistently and highly confident in its correct predictions.
 
 Together, these metrics provide a comprehensive view: Accuracy tells us the rate of correct classifications, while Log Loss reveals the model's underlying certainty and reliability.
+
 Results:
 
 ==================== FINAL RESULTS SUMMARY ====================
