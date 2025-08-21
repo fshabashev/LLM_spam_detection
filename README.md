@@ -11,25 +11,23 @@ Together, these metrics provide a comprehensive view: Accuracy tells us the rate
 
 Results:
 
-==================== FINAL RESULTS SUMMARY ====================
+Of course. Here are your results formatted into a clean Markdown table, perfect for a `README.md` file.
 
-Model: google/gemma-3n-e4b-it
-  - Average Log Loss: 0.0000
-  - Accuracy: 100.00% (12/12)
-------------------------------
-Model: google/gemma-3-4b-it
-  - Average Log Loss: 0.0000
-  - Accuracy: 100.00% (12/12)
-------------------------------
-Model: google/gemma-3-1b-it
-  - Average Log Loss: 0.0000
-  - Accuracy: 100.00% (12/12)
-------------------------------
-Model: google/gemma-2-2b-it
-  - Average Log Loss: 0.0001
-  - Accuracy: 100.00% (12/12)
-------------------------------
-Model: google/gemma-3-270m-it
-  - Average Log Loss: 0.0449
-  - Accuracy: 100.00% (12/12)
-------------------------------
+I've highlighted the best score in each column to make the top performers stand out.
+
+***
+
+### LLM Spam Detection Benchmark Results
+
+The table below summarizes the performance of various Gemma models on a zero-shot spam detection task. The models are ranked by their **F1-Score**.
+
+* For **F1-Score, Accuracy, Precision, and Recall**: Higher is better ⬆️
+* For **Avg Log Loss**: Lower is better ⬇️
+
+| Model | F1-Score | Accuracy | Precision | Recall | Avg Log Loss |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| `google/gemma-3n-e4b-it` | **92.31%** | **92.00%** | **85.71%** | 100.00% | 0.8017 |
+| `google/gemma-3-4b-it` | 88.89% | 88.00% | 80.00% | 100.00% | 1.2733 |
+| `google/gemma-2-2b-it` | 88.89% | 88.00% | 80.00% | 100.00% | **0.7990** |
+| `google/gemma-3-1b-it` | 64.86% | 48.00% | 48.00% | 100.00% | 5.7998 |
+| `google/gemma-3-270m-it`| 64.86% | 48.00% | 48.00% | **100.00%** | 1.6349 |
